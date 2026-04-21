@@ -180,15 +180,47 @@ def add_site_identifier(df: pd.DataFrame, site_col: str = "site_id") -> pd.DataF
     return out
 
 
-def build_time_split_masks(target_dates: pd.Series) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Use the same time split policy as existing notebooks."""
-    year = target_dates.dt.year
-    month = target_dates.dt.month
+def build_time_split_masks(
+    target_dates: pd.Series,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build chronological train/val/test masks from target dates.
 
-    train_mask = (year == 2021) | ((year == 2022) & (month <= 6))
-    val_mask = (year == 2022) & (month >= 7)
-    test_mask = year == 2023
-    return train_mask.to_numpy(), val_mask.to_numpy(), test_mask.to_numpy()
+    Splits are computed by unique target months in ascending order to avoid
+    temporal leakage. Test ratio is implicit: 1 - train_ratio - val_ratio.
+    """
+    if not (0.0 < train_ratio < 1.0):
+        raise ValueError("train_ratio must be in (0, 1).")
+    if not (0.0 <= val_ratio < 1.0):
+        raise ValueError("val_ratio must be in [0, 1).")
+    if train_ratio + val_ratio >= 1.0:
+        raise ValueError("train_ratio + val_ratio must be < 1.0.")
+
+    unique_dates = np.sort(target_dates.dropna().unique())
+    n_dates = len(unique_dates)
+    if n_dates < 3:
+        raise ValueError(
+            "Need at least 3 unique target dates to create train/val/test splits."
+        )
+
+    n_train = max(1, int(np.floor(n_dates * train_ratio)))
+    n_val = max(1, int(np.floor(n_dates * val_ratio)))
+    if n_train + n_val >= n_dates:
+        # Keep at least one unique month for test.
+        n_val = max(1, n_dates - n_train - 1)
+        if n_train + n_val >= n_dates:
+            n_train = n_dates - 2
+            n_val = 1
+
+    train_dates = set(unique_dates[:n_train])
+    val_dates = set(unique_dates[n_train : n_train + n_val])
+    test_dates = set(unique_dates[n_train + n_val :])
+
+    train_mask = target_dates.isin(train_dates).to_numpy()
+    val_mask = target_dates.isin(val_dates).to_numpy()
+    test_mask = target_dates.isin(test_dates).to_numpy()
+    return train_mask, val_mask, test_mask
 
 
 def build_sequences(
@@ -347,11 +379,15 @@ def save_prepared_outputs(
     forecast_horizon_months: int,
     site_col: str,
     gap_fill_strategy: str,
+    train_ratio: float,
+    val_ratio: float,
 ) -> Dict[str, Path]:
     """Persist arrays, metadata, scaler, and config for Task 2 training."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    train_mask, val_mask, test_mask = build_time_split_masks(metadata["target_date"])
+    train_mask, val_mask, test_mask = build_time_split_masks(
+        metadata["target_date"], train_ratio=train_ratio, val_ratio=val_ratio
+    )
 
     np.savez_compressed(
         output_path,
@@ -400,6 +436,9 @@ def save_prepared_outputs(
         "target_definition": "t+3",
         "site_column": site_col,
         "gap_fill_strategy": gap_fill_strategy,
+        "train_ratio": train_ratio,
+        "val_ratio": val_ratio,
+        "test_ratio": 1.0 - train_ratio - val_ratio,
         "feature_columns": list(feature_columns),
     }
     config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
@@ -428,6 +467,8 @@ def prepare_task2_dataset(
     forecast_horizon_months: int = 3,
     site_col: str = "site_id",
     gap_fill_strategy: str = "strict",
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
 ) -> Dict[str, object]:
     """End-to-end Task 2 data preparation."""
     raw_df = pd.read_csv(input_csv)
@@ -461,9 +502,13 @@ def prepare_task2_dataset(
         forecast_horizon_months=forecast_horizon_months,
         site_col=site_col,
         gap_fill_strategy=gap_fill_strategy,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
     )
 
-    train_mask, val_mask, test_mask = build_time_split_masks(metadata["target_date"])
+    train_mask, val_mask, test_mask = build_time_split_masks(
+        metadata["target_date"], train_ratio=train_ratio, val_ratio=val_ratio
+    )
     summary = {
         "stats": stats,
         "paths": paths,
@@ -472,6 +517,9 @@ def prepare_task2_dataset(
         "train_samples": int(train_mask.sum()),
         "val_samples": int(val_mask.sum()),
         "test_samples": int(test_mask.sum()),
+        "train_ratio": train_ratio,
+        "val_ratio": val_ratio,
+        "test_ratio": 1.0 - train_ratio - val_ratio,
     }
     return summary
 
@@ -481,7 +529,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("Bangalore_Monthly_Final_Corrected.csv"),
+        default=Path("csv/Bangalore_Monthly_Final_Corrected.csv"),
         help="Path to Bangalore monthly CSV.",
     )
     parser.add_argument(
@@ -515,6 +563,18 @@ def parse_args() -> argparse.Namespace:
         choices=["strict", "ffill", "interpolate"],
         help="How to handle missing months/values after monthly reindexing.",
     )
+    parser.add_argument(
+        "--train-ratio",
+        type=float,
+        default=0.70,
+        help="Chronological fraction of unique target months to allocate to training.",
+    )
+    parser.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.15,
+        help="Chronological fraction of unique target months to allocate to validation.",
+    )
     return parser.parse_args()
 
 
@@ -527,6 +587,8 @@ def main() -> None:
         forecast_horizon_months=args.horizon,
         site_col=args.site_col,
         gap_fill_strategy=args.gap_fill,
+        train_ratio=args.train_ratio,
+        val_ratio=args.val_ratio,
     )
 
     print("=" * 80)
@@ -535,6 +597,10 @@ def main() -> None:
     print(f"Total samples: {summary['num_samples']:,}")
     print(f"Input shape: ({summary['num_samples']}, {args.lookback}, {summary['num_features']})")
     print(f"Gap fill strategy: {args.gap_fill}")
+    print(
+        "Split ratios (train/val/test): "
+        f"{summary['train_ratio']:.2f}/{summary['val_ratio']:.2f}/{summary['test_ratio']:.2f}"
+    )
     print(f"Train samples: {summary['train_samples']:,}")
     print(f"Validation samples: {summary['val_samples']:,}")
     print(f"Test samples: {summary['test_samples']:,}")

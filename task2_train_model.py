@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import random
+from itertools import product
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
 
 from prepare_task2_data import load_prepared_data, prepare_task2_dataset
@@ -30,10 +31,11 @@ def set_global_seed(seed: int) -> None:
 
 
 def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    """Compute RMSE and MAE in a consistent format."""
+    """Compute regression metrics in a consistent format."""
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
     mae = float(mean_absolute_error(y_true, y_pred))
-    return {"RMSE": rmse, "MAE": mae}
+    r2 = float(r2_score(y_true, y_pred))
+    return {"RMSE": rmse, "MAE": mae, "R2": r2}
 
 
 def flatten_lag_sequences(X: np.ndarray) -> np.ndarray:
@@ -119,6 +121,54 @@ def build_lstm_model(input_shape: Tuple[int, int], learning_rate: float = 1e-3):
     return model
 
 
+def build_bilstm_model(input_shape: Tuple[int, int], learning_rate: float = 1e-3):
+    """Build an attention-augmented bidirectional LSTM for monthly sequences."""
+    return build_bilstm_attention_model(input_shape=input_shape, learning_rate=learning_rate)
+
+
+def build_bilstm_attention_model(
+    input_shape: Tuple[int, int],
+    lstm_units_1: int = 64,
+    lstm_units_2: int = 32,
+    dropout: float = 0.2,
+    learning_rate: float = 1e-3,
+):
+    """Build a BiLSTM with temporal attention over the hidden sequence."""
+    try:
+        import tensorflow as tf
+        from tensorflow.keras import layers
+    except Exception as exc:
+        raise ImportError(
+            "TensorFlow is not available. Install with: pip install tensorflow"
+        ) from exc
+
+    inputs = layers.Input(shape=input_shape)
+    x = layers.Bidirectional(
+        layers.LSTM(lstm_units_1, return_sequences=True)
+    )(inputs)
+    x = layers.Dropout(dropout)(x)
+    x = layers.Bidirectional(
+        layers.LSTM(lstm_units_2, return_sequences=True)
+    )(x)
+
+    query = layers.Lambda(lambda tensor: tensor[:, -1:, :], name="attention_query")(x)
+    context = layers.Attention(use_scale=True, name="temporal_attention")([query, x])
+    context = layers.Flatten(name="attention_context_flatten")(context)
+    query = layers.Flatten(name="attention_query_flatten")(query)
+    x = layers.Concatenate(name="attention_concatenate")([query, context])
+    x = layers.Dropout(dropout)(x)
+    x = layers.Dense(16, activation="relu")(x)
+    outputs = layers.Dense(1)(x)
+
+    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="bilstm_attention")
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        loss="mse",
+        metrics=[tf.keras.metrics.MeanAbsoluteError(name="mae")],
+    )
+    return model
+
+
 def train_lstm(
     X_train: np.ndarray,
     y_train: np.ndarray,
@@ -153,6 +203,137 @@ def train_lstm(
     )
     val_pred = model.predict(X_val, verbose=0).ravel()
     return model, history, val_pred
+
+
+def train_bilstm(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    epochs: int,
+    batch_size: int,
+):
+    """Train BiLSTM with early stopping to limit overfitting."""
+    try:
+        import tensorflow as tf
+    except Exception as exc:
+        raise ImportError(
+            "TensorFlow is not available. Install with: pip install tensorflow"
+        ) from exc
+
+    model = build_bilstm_model((X_train.shape[1], X_train.shape[2]))
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(
+            monitor="val_loss", patience=10, restore_best_weights=True
+        )
+    ]
+
+    history = model.fit(
+        X_train,
+        y_train,
+        validation_data=(X_val, y_val),
+        epochs=epochs,
+        batch_size=batch_size,
+        callbacks=callbacks,
+        verbose=1,
+    )
+    val_pred = model.predict(X_val, verbose=0).ravel()
+    return model, history, val_pred
+
+
+def tune_bilstm(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    epochs: int,
+    batch_size: int,
+):
+    """Grid-search a small attention-BiLSTM space and return the best model by val RMSE."""
+    try:
+        import tensorflow as tf
+    except Exception as exc:
+        raise ImportError(
+            "TensorFlow is not available. Install with: pip install tensorflow"
+        ) from exc
+
+    search_space = {
+        "lstm_units_1": [32],
+        "lstm_units_2": [16],
+        "dropout": [0.1],
+        "learning_rate": [1e-3],
+        "batch_size": [64],
+    }
+
+    candidate_rows: List[Dict[str, float]] = []
+    best_result: Dict[str, object] | None = None
+
+    for lstm_units_1, lstm_units_2, dropout, learning_rate, batch_size_candidate in product(
+        search_space["lstm_units_1"],
+        search_space["lstm_units_2"],
+        search_space["dropout"],
+        search_space["learning_rate"],
+        search_space["batch_size"],
+    ):
+        tf.keras.backend.clear_session()
+        model = build_bilstm_attention_model(
+            input_shape=(X_train.shape[1], X_train.shape[2]),
+            lstm_units_1=lstm_units_1,
+            lstm_units_2=lstm_units_2,
+            dropout=dropout,
+            learning_rate=learning_rate,
+        )
+        callbacks = [
+            tf.keras.callbacks.EarlyStopping(
+                monitor="val_loss", patience=5, restore_best_weights=True
+            )
+        ]
+        history = model.fit(
+            X_train,
+            y_train,
+            validation_data=(X_val, y_val),
+            epochs=epochs,
+            batch_size=batch_size_candidate,
+            callbacks=callbacks,
+            verbose=0,
+        )
+        val_pred = model.predict(X_val, verbose=0).ravel()
+        val_metrics = regression_metrics(y_val, val_pred)
+        print(
+            "Attention BiLSTM candidate "
+            f"u1={lstm_units_1}, u2={lstm_units_2}, dropout={dropout}, lr={learning_rate}, "
+            f"batch_size={batch_size_candidate} -> RMSE={val_metrics['RMSE']:.4f}, MAE={val_metrics['MAE']:.4f}, R2={val_metrics['R2']:.4f}"
+        )
+        candidate_row = {
+            "lstm_units_1": float(lstm_units_1),
+            "lstm_units_2": float(lstm_units_2),
+            "dropout": float(dropout),
+            "learning_rate": float(learning_rate),
+            "batch_size": float(batch_size_candidate),
+            "epochs_ran": float(len(history.history["loss"])),
+            **val_metrics,
+        }
+        candidate_rows.append(candidate_row)
+
+        if best_result is None or val_metrics["RMSE"] < best_result["val_metrics"]["RMSE"]:
+            best_result = {
+                "model": model,
+                "history": history,
+                "val_pred": val_pred,
+                "val_metrics": val_metrics,
+                "config": {
+                    "lstm_units_1": lstm_units_1,
+                    "lstm_units_2": lstm_units_2,
+                    "dropout": dropout,
+                    "learning_rate": learning_rate,
+                    "batch_size": batch_size_candidate,
+                },
+            }
+
+    if best_result is None:
+        raise RuntimeError("Attention BiLSTM tuning failed to evaluate any candidates.")
+
+    return best_result, pd.DataFrame(candidate_rows).sort_values(["RMSE", "MAE"])
 
 
 def choose_better_model(results: Dict[str, Dict[str, Dict[str, float]]]) -> str:
@@ -205,6 +386,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-xgboost", action="store_true", help="Skip XGBoost training.")
     parser.add_argument("--skip-lstm", action="store_true", help="Skip LSTM training.")
     parser.add_argument(
+        "--tune-bilstm",
+        action="store_true",
+        help="Run a small attention-BiLSTM hyperparameter search and use the best candidate.",
+    )
+    parser.add_argument(
         "--metrics-output",
         type=Path,
         default=Path("task2_model_metrics.json"),
@@ -215,6 +401,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("task2_model_predictions.csv"),
         help="Path to save validation/test predictions.",
+    )
+    parser.add_argument(
+        "--model-output",
+        type=Path,
+        default=Path("bilstm_attention_results") / "bilstm_attention_model.keras",
+        help="Path to save the trained attention-BiLSTM model.",
     )
     return parser.parse_args()
 
@@ -350,6 +542,74 @@ def main() -> None:
         except Exception as exc:
             print(f"LSTM training skipped: {exc}")
 
+    print("\nTraining BiLSTM+Attention...")
+    try:
+        bilstm_tuning_table = None
+        if args.tune_bilstm:
+            best_bilstm, bilstm_tuning_table = tune_bilstm(
+                X_train_scaled,
+                y_train,
+                X_val_scaled,
+                y_val,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+            )
+            bilstm_model = best_bilstm["model"]
+            bilstm_history = best_bilstm["history"]
+            bilstm_val_pred = best_bilstm["val_pred"]
+            bilstm_config = best_bilstm["config"]
+        else:
+            bilstm_model, bilstm_history, bilstm_val_pred = train_bilstm(
+                X_train_scaled,
+                y_train,
+                X_val_scaled,
+                y_val,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+            )
+            bilstm_config = {
+                "lstm_units_1": 64,
+                "lstm_units_2": 32,
+                "dropout": 0.2,
+                "learning_rate": 1e-3,
+                "batch_size": args.batch_size,
+            }
+
+        _ = bilstm_history
+        bilstm_test_pred = bilstm_model.predict(X_test_scaled, verbose=0).ravel()
+
+        results["BiLSTM+Attention"] = {
+            "val": regression_metrics(y_val, bilstm_val_pred),
+            "test": regression_metrics(y_test, bilstm_test_pred),
+        }
+
+        prediction_tables.append(
+            pd.DataFrame(
+                {
+                    "model": "BiLSTM+Attention",
+                    "split": "val",
+                    "site_id": site_ids[val_mask],
+                    "target_date": target_dates[val_mask].strftime("%Y-%m-%d"),
+                    "actual": y_val,
+                    "predicted": bilstm_val_pred,
+                }
+            )
+        )
+        prediction_tables.append(
+            pd.DataFrame(
+                {
+                    "model": "BiLSTM+Attention",
+                    "split": "test",
+                    "site_id": site_ids[test_mask],
+                    "target_date": target_dates[test_mask].strftime("%Y-%m-%d"),
+                    "actual": y_test,
+                    "predicted": bilstm_test_pred,
+                }
+            )
+        )
+    except Exception as exc:
+        print(f"BiLSTM training skipped: {exc}")
+
     print("\n" + "=" * 80)
     print("TASK 2 MODEL COMPARISON")
     print("=" * 80)
@@ -359,8 +619,12 @@ def main() -> None:
 
     for model_name, metrics in results.items():
         print(f"\n{model_name}")
-        print(f"  Validation -> RMSE: {metrics['val']['RMSE']:.4f}, MAE: {metrics['val']['MAE']:.4f}")
-        print(f"  Test       -> RMSE: {metrics['test']['RMSE']:.4f}, MAE: {metrics['test']['MAE']:.4f}")
+        print(
+            f"  Validation -> RMSE: {metrics['val']['RMSE']:.4f}, MAE: {metrics['val']['MAE']:.4f}, R2: {metrics['val']['R2']:.4f}"
+        )
+        print(
+            f"  Test       -> RMSE: {metrics['test']['RMSE']:.4f}, MAE: {metrics['test']['MAE']:.4f}, R2: {metrics['test']['R2']:.4f}"
+        )
 
     best_model = choose_better_model(results)
     print(f"\nBest model (lower test RMSE/MAE): {best_model}")
@@ -372,6 +636,11 @@ def main() -> None:
         "results": results,
         "assumption": "Input window t-6..t-1 predicts target at t+3 (4 months ahead of last observed point).",
     }
+    if args.tune_bilstm:
+        metrics_payload["bilstm_best_config"] = bilstm_config
+        metrics_payload["bilstm_tuning_table"] = (
+            bilstm_tuning_table.to_dict(orient="records") if bilstm_tuning_table is not None else []
+        )
     args.metrics_output.write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
 
     if prediction_tables:
@@ -379,6 +648,11 @@ def main() -> None:
         args.predictions_output.parent.mkdir(parents=True, exist_ok=True)
         predictions_df.to_csv(args.predictions_output, index=False)
         print(f"Saved predictions: {args.predictions_output}")
+
+    if "bilstm_model" in locals():
+        args.model_output.parent.mkdir(parents=True, exist_ok=True)
+        bilstm_model.save(args.model_output)
+        print(f"Saved model: {args.model_output}")
 
     print(f"Saved metrics: {args.metrics_output}")
 

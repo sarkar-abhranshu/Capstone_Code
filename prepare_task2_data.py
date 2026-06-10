@@ -389,37 +389,27 @@ def save_prepared_outputs(
         metadata["target_date"], train_ratio=train_ratio, val_ratio=val_ratio
     )
 
-    np.savez_compressed(
-        output_path,
-        X_raw=X_raw,
-        X_scaled=X_scaled,
-        y=y,
-        X_train=X_scaled[train_mask],
-        y_train=y[train_mask],
-        X_val=X_scaled[val_mask],
-        y_val=y[val_mask],
-        X_test=X_scaled[test_mask],
-        y_test=y[test_mask],
-        train_mask=train_mask,
-        val_mask=val_mask,
-        test_mask=test_mask,
-        feature_names=np.asarray(feature_columns),
-        site_ids=np.asarray(metadata[site_col].astype(str).tolist(), dtype="U64"),
-        sequence_start_dates=np.asarray(
-            metadata["sequence_start_date"].dt.strftime("%Y-%m-%d").tolist(), dtype="U10"
-        ),
-        anchor_dates=np.asarray(
-            metadata["anchor_date"].dt.strftime("%Y-%m-%d").tolist(), dtype="U10"
-        ),
-        reference_dates=np.asarray(
-            metadata["reference_date"].dt.strftime("%Y-%m-%d").tolist(), dtype="U10"
-        ),
-        target_dates=np.asarray(
-            metadata["target_date"].dt.strftime("%Y-%m-%d").tolist(), dtype="U10"
-        ),
-        lookback_months=np.int32(lookback_months),
-        forecast_horizon_months=np.int32(forecast_horizon_months),
-    )
+    data_dict = {
+        "site_id": metadata[site_col].astype(str),
+        "sequence_start_date": metadata["sequence_start_date"].dt.strftime("%Y-%m-%d"),
+        "anchor_date": metadata["anchor_date"].dt.strftime("%Y-%m-%d"),
+        "reference_date": metadata["reference_date"].dt.strftime("%Y-%m-%d"),
+        "target_date": metadata["target_date"].dt.strftime("%Y-%m-%d"),
+        "y": y,
+        "train_mask": train_mask.astype(int),
+        "val_mask": val_mask.astype(int),
+        "test_mask": test_mask.astype(int),
+    }
+
+    # Flatten X_raw and X_scaled into the dataframe columns.
+    n_samples, lookback_months, n_features = X_raw.shape
+    for t in range(lookback_months):
+        for f_idx, f_name in enumerate(feature_columns):
+            data_dict[f"X_raw_t{t}_{f_name}"] = X_raw[:, t, f_idx]
+            data_dict[f"X_scaled_t{t}_{f_name}"] = X_scaled[:, t, f_idx]
+
+    df_data = pd.DataFrame(data_dict)
+    df_data.to_csv(output_path, index=False)
 
     metadata_path = output_path.with_name(f"{output_path.stem}_metadata.csv")
     metadata.to_csv(metadata_path, index=False)
@@ -444,33 +434,90 @@ def save_prepared_outputs(
     config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
     return {
-        "npz": output_path,
+        "csv": output_path,
         "metadata_csv": metadata_path,
         "scaler_pkl": scaler_path,
         "config_json": config_path,
     }
 
 
-def load_prepared_data(npz_path: Path) -> Dict[str, np.ndarray]:
-    """Load the prepared npz payload for training/validation scripts."""
-    if not npz_path.exists():
-        raise FileNotFoundError(f"Prepared data file not found: {npz_path}")
-    # allow_pickle=True keeps backward compatibility with earlier object-dtype saves.
-    with np.load(npz_path, allow_pickle=True) as data:
-        return {key: data[key] for key in data.files}
+def load_prepared_data(file_path: Path) -> Dict[str, np.ndarray]:
+    """Load the prepared payload (either csv or npz) for training/validation scripts."""
+    if not file_path.exists():
+        raise FileNotFoundError(f"Prepared data file not found: {file_path}")
+
+    if file_path.suffix == ".npz":
+        # allow_pickle=True keeps backward compatibility with earlier object-dtype saves.
+        with np.load(file_path, allow_pickle=True) as data:
+            return {key: data[key] for key in data.files}
+
+    # Load from CSV format
+    df = pd.read_csv(file_path)
+
+    y = df["y"].to_numpy(dtype=np.float32)
+    train_mask = df["train_mask"].to_numpy(dtype=bool)
+    val_mask = df["val_mask"].to_numpy(dtype=bool)
+    test_mask = df["test_mask"].to_numpy(dtype=bool)
+    site_ids = df["site_id"].to_numpy(dtype=object)
+    sequence_start_dates = df["sequence_start_date"].to_numpy(dtype=object)
+    anchor_dates = df["anchor_date"].to_numpy(dtype=object)
+    reference_dates = df["reference_date"].to_numpy(dtype=object)
+    target_dates = df["target_date"].to_numpy(dtype=object)
+
+    raw_cols = [col for col in df.columns if col.startswith("X_raw_t")]
+
+    t_vals = set()
+    for col in raw_cols:
+        parts = col[7:].split("_", 1)
+        if len(parts) == 2:
+            t_vals.add(int(parts[0]))
+
+    lookback_months = len(t_vals)
+    t0_cols = [col for col in raw_cols if col.startswith("X_raw_t0_")]
+    feature_names = [col[9:] for col in t0_cols]
+    n_features = len(feature_names)
+
+    n_samples = len(df)
+    X_raw = np.zeros((n_samples, lookback_months, n_features), dtype=np.float32)
+    X_scaled = np.zeros((n_samples, lookback_months, n_features), dtype=np.float32)
+
+    for t in range(lookback_months):
+        for f_idx, f_name in enumerate(feature_names):
+            X_raw[:, t, f_idx] = df[f"X_raw_t{t}_{f_name}"].to_numpy(dtype=np.float32)
+            X_scaled[:, t, f_idx] = df[f"X_scaled_t{t}_{f_name}"].to_numpy(dtype=np.float32)
+
+    return {
+        "X_raw": X_raw,
+        "X_scaled": X_scaled,
+        "y": y,
+        "train_mask": train_mask,
+        "val_mask": val_mask,
+        "test_mask": test_mask,
+        "feature_names": np.asarray(feature_names, dtype=object),
+        "site_ids": site_ids,
+        "sequence_start_dates": sequence_start_dates,
+        "anchor_dates": anchor_dates,
+        "reference_dates": reference_dates,
+        "target_dates": target_dates,
+        "lookback_months": np.int32(lookback_months),
+    }
 
 
 def prepare_task2_dataset(
     input_csv: Path,
-    output_npz: Path,
+    output_csv: Optional[Path] = None,
     lookback_months: int = 6,
     forecast_horizon_months: int = 3,
     site_col: str = "site_id",
     gap_fill_strategy: str = "strict",
     train_ratio: float = 0.7,
     val_ratio: float = 0.15,
+    output_npz: Optional[Path] = None,
 ) -> Dict[str, object]:
     """End-to-end Task 2 data preparation."""
+    if output_csv is None:
+        output_csv = Path("task2_processed_data.csv")
+
     raw_df = pd.read_csv(input_csv)
     preprocessed_df = apply_preprocessing(raw_df)
     preprocessed_df = add_fertility_index(preprocessed_df)
@@ -491,7 +538,7 @@ def prepare_task2_dataset(
 
     X_scaled, scaler = standardize_sequences(X_raw)
     paths = save_prepared_outputs(
-        output_path=output_npz,
+        output_path=output_csv,
         X_raw=X_raw,
         X_scaled=X_scaled,
         y=y,
@@ -529,14 +576,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("csv/Bangalore_Monthly_Final_Corrected.csv"),
+        default=Path("csv/Bangalore_2019_2024_RAW.csv"),
         help="Path to Bangalore monthly CSV.",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("task2_processed_data.npz"),
-        help="Path for saved npz dataset.",
+        default=Path("task2_processed_data.csv"),
+        help="Path for saved CSV dataset.",
     )
     parser.add_argument(
         "--lookback",
@@ -582,7 +629,7 @@ def main() -> None:
     args = parse_args()
     summary = prepare_task2_dataset(
         input_csv=args.input,
-        output_npz=args.output,
+        output_csv=args.output,
         lookback_months=args.lookback,
         forecast_horizon_months=args.horizon,
         site_col=args.site_col,

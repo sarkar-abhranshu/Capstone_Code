@@ -170,7 +170,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data",
         type=Path,
-        default=Path("task2_processed_data.npz"),
+        default=Path("task2_processed_data.csv"),
         help="Prepared data file from prepare_task2_data.py.",
     )
     parser.add_argument(
@@ -232,7 +232,7 @@ def main() -> None:
         print("Prepared dataset missing or refresh requested. Running data preparation...")
         prepare_task2_dataset(
             input_csv=args.input,
-            output_npz=args.data,
+            output_csv=args.data,
             lookback_months=6,
             forecast_horizon_months=3,
             site_col="site_id",

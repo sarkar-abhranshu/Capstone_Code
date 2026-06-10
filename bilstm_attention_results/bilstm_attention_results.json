@@ -1,0 +1,38 @@
+{
+  "best_model": "BiLSTM+Attention",
+  "results": {
+    "BiLSTM+Attention": {
+      "val": {
+        "RMSE": 0.02441999601740208,
+        "MAE": 0.01990361511707306,
+        "R2": 0.9430299997329712
+      },
+      "test": {
+        "RMSE": 0.022525761190039083,
+        "MAE": 0.018208643421530724,
+        "R2": 0.955514132976532
+      }
+    }
+  },
+  "assumption": "Input window t-6..t-1 predicts target at t+3 (4 months ahead of last observed point).",
+  "bilstm_best_config": {
+    "lstm_units_1": 32,
+    "lstm_units_2": 16,
+    "dropout": 0.1,
+    "learning_rate": 0.001,
+    "batch_size": 64
+  },
+  "bilstm_tuning_table": [
+    {
+      "lstm_units_1": 32.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.1,
+      "learning_rate": 0.001,
+      "batch_size": 64.0,
+      "epochs_ran": 20.0,
+      "RMSE": 0.02441999601740208,
+      "MAE": 0.01990361511707306,
+      "R2": 0.9430299997329712
+    }
+  ]
+}

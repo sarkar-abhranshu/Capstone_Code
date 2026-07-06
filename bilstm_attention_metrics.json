@@ -1,0 +1,139 @@
+{
+  "best_model": "XGBoost",
+  "results": {
+    "XGBoost": {
+      "val": {
+        "RMSE": 0.033049362387170426,
+        "MAE": 0.029665814712643623,
+        "R2": 0.8956527709960938
+      },
+      "test": {
+        "RMSE": 0.016690691644729794,
+        "MAE": 0.013761026784777641,
+        "R2": 0.9755762815475464
+      }
+    },
+    "LSTM": {
+      "val": {
+        "RMSE": 0.0385834028079019,
+        "MAE": 0.03201907128095627,
+        "R2": 0.8577815294265747
+      },
+      "test": {
+        "RMSE": 0.037631156165869706,
+        "MAE": 0.02981058694422245,
+        "R2": 0.875846803188324
+      }
+    },
+    "BiLSTM+Attention": {
+      "val": {
+        "RMSE": 0.021073575438684895,
+        "MAE": 0.016656674444675446,
+        "R2": 0.9575740694999695
+      },
+      "test": {
+        "RMSE": 0.029602199239456884,
+        "MAE": 0.023787835612893105,
+        "R2": 0.9231735467910767
+      }
+    }
+  },
+  "assumption": "Input window t-6..t-1 predicts target at t+3 (4 months ahead of last observed point).",
+  "bilstm_best_config": {
+    "lstm_units_1": 32,
+    "lstm_units_2": 16,
+    "dropout": 0.2,
+    "learning_rate": 0.001,
+    "batch_size": 64
+  },
+  "bilstm_tuning_table": [
+    {
+      "lstm_units_1": 32.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.2,
+      "learning_rate": 0.001,
+      "batch_size": 64.0,
+      "epochs_ran": 16.0,
+      "RMSE": 0.021073575438684895,
+      "MAE": 0.016656674444675446,
+      "R2": 0.9575740694999695
+    },
+    {
+      "lstm_units_1": 32.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.2,
+      "learning_rate": 0.0005,
+      "batch_size": 64.0,
+      "epochs_ran": 23.0,
+      "RMSE": 0.02236788980190546,
+      "MAE": 0.018163267523050308,
+      "R2": 0.952202558517456
+    },
+    {
+      "lstm_units_1": 64.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.1,
+      "learning_rate": 0.001,
+      "batch_size": 64.0,
+      "epochs_ran": 16.0,
+      "RMSE": 0.026254138948410798,
+      "MAE": 0.02176864631474018,
+      "R2": 0.9341508150100708
+    },
+    {
+      "lstm_units_1": 64.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.2,
+      "learning_rate": 0.0005,
+      "batch_size": 64.0,
+      "epochs_ran": 19.0,
+      "RMSE": 0.02825974593793613,
+      "MAE": 0.023038651794195175,
+      "R2": 0.9237058162689209
+    },
+    {
+      "lstm_units_1": 64.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.1,
+      "learning_rate": 0.0005,
+      "batch_size": 64.0,
+      "epochs_ran": 29.0,
+      "RMSE": 0.02907236822249223,
+      "MAE": 0.024095110595226288,
+      "R2": 0.9192550182342529
+    },
+    {
+      "lstm_units_1": 32.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.1,
+      "learning_rate": 0.001,
+      "batch_size": 64.0,
+      "epochs_ran": 33.0,
+      "RMSE": 0.03144198542225098,
+      "MAE": 0.02793019264936447,
+      "R2": 0.9055559039115906
+    },
+    {
+      "lstm_units_1": 64.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.2,
+      "learning_rate": 0.001,
+      "batch_size": 64.0,
+      "epochs_ran": 22.0,
+      "RMSE": 0.033305838486153615,
+      "MAE": 0.029293909668922424,
+      "R2": 0.8940268754959106
+    },
+    {
+      "lstm_units_1": 32.0,
+      "lstm_units_2": 16.0,
+      "dropout": 0.1,
+      "learning_rate": 0.0005,
+      "batch_size": 64.0,
+      "epochs_ran": 16.0,
+      "RMSE": 0.03359365102842079,
+      "MAE": 0.02740875631570816,
+      "R2": 0.8921874761581421
+    }
+  ]
+}

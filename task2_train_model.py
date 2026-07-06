@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from itertools import product
 from pathlib import Path
@@ -19,14 +20,17 @@ from prepare_task2_data import load_prepared_data, prepare_task2_dataset
 
 def set_global_seed(seed: int) -> None:
     """Set seeds for reproducible runs across NumPy/Python/TensorFlow."""
+    os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     try:
         import tensorflow as tf
 
         tf.random.set_seed(seed)
+        tf.keras.utils.set_random_seed(seed)
+        os.environ["TF_DETERMINISTIC_OPS"] = "1"
+        os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
     except Exception:
-        # TensorFlow is optional in environments where only tree models are used.
         pass
 
 
@@ -80,11 +84,11 @@ def train_xgboost(
         n_estimators=300,
         max_depth=8,
         learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        subsample=1.0,
+        colsample_bytree=1.0,
         objective="reg:squarederror",
         random_state=seed,
-        n_jobs=-1,
+        n_jobs=1,
         tree_method="hist",
     )
 

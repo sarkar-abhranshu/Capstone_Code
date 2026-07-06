@@ -130,6 +130,19 @@ def build_bilstm_model(input_shape: Tuple[int, int], learning_rate: float = 1e-3
     return build_bilstm_attention_model(input_shape=input_shape, learning_rate=learning_rate)
 
 
+def compute_trend(tensor):
+    """Compute OLS slope per feature over the time dimension."""
+    import tensorflow as tf
+    timesteps = tf.cast(tf.shape(tensor)[1], tf.float32)
+    t = tf.range(timesteps, dtype=tf.float32)
+    t_centered = t - tf.reduce_mean(t)
+    t_centered = tf.reshape(t_centered, (1, -1, 1))
+    x_centered = tensor - tf.reduce_mean(tensor, axis=1, keepdims=True)
+    numerator = tf.reduce_sum(t_centered * x_centered, axis=1)
+    denominator = tf.reduce_sum(t_centered ** 2)
+    return numerator / denominator
+
+
 def build_bilstm_attention_model(
     input_shape: Tuple[int, int],
     lstm_units_1: int = 64,
@@ -137,7 +150,7 @@ def build_bilstm_attention_model(
     dropout: float = 0.2,
     learning_rate: float = 1e-3,
 ):
-    """Build a BiLSTM with temporal attention over the hidden sequence."""
+    """Build a BiLSTM with attention + rolling statistics context."""
     try:
         import tensorflow as tf
         from tensorflow.keras import layers
@@ -159,7 +172,19 @@ def build_bilstm_attention_model(
     context = layers.Attention(use_scale=True, name="temporal_attention")([query, x])
     context = layers.Flatten(name="attention_context_flatten")(context)
     query = layers.Flatten(name="attention_query_flatten")(query)
-    x = layers.Concatenate(name="attention_concatenate")([query, context])
+    attn_out = layers.Concatenate(name="attention_concatenate")([query, context])
+
+    mean_feat = layers.Lambda(
+        lambda t: tf.reduce_mean(t, axis=1), name="rolling_mean"
+    )(inputs)
+    std_feat = layers.Lambda(
+        lambda t: tf.math.reduce_std(t, axis=1), name="rolling_std"
+    )(inputs)
+    trend_feat = layers.Lambda(compute_trend, name="rolling_trend")(inputs)
+
+    x = layers.Concatenate(name="context_concatenate")(
+        [attn_out, mean_feat, std_feat, trend_feat]
+    )
     x = layers.Dropout(dropout)(x)
     x = layers.Dense(16, activation="relu")(x)
     outputs = layers.Dense(1)(x)

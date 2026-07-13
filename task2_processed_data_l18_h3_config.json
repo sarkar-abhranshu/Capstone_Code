@@ -1,0 +1,33 @@
+{
+  "lookback_months": 18,
+  "forecast_horizon_months": 3,
+  "input_definition": "t-6 ... t-1",
+  "target_definition": "t+3",
+  "site_column": "site_id",
+  "gap_fill_strategy": "interpolate",
+  "train_ratio": 0.7,
+  "val_ratio": 0.15,
+  "test_ratio": 0.15000000000000005,
+  "feature_columns": [
+    "Rain_log",
+    "Temp",
+    "LST",
+    "SoilMoisture",
+    "NDVI",
+    "green_fraction",
+    "Clay",
+    "Nitrogen_log",
+    "pH",
+    "BulkDensity",
+    "Elevation",
+    "Slope_log",
+    "AOD",
+    "NO2_log",
+    "SO2_log",
+    "Month_Sin",
+    "Month_Cos",
+    "longitude",
+    "latitude",
+    "FertilityIndex"
+  ]
+}

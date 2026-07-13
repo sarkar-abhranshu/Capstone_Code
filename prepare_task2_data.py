@@ -268,7 +268,7 @@ def build_sequences(
     target_offset = forecast_horizon_months + 1
     min_required_months = lookback_months + target_offset
 
-    for site_id, site_df in df.groupby(site_col, sort=False):
+    for site_id, site_df in df.groupby(site_col, sort=True):
         stats["total_sites"] += 1
 
         site_df = site_df.sort_values("date").drop_duplicates(subset="date", keep="last")

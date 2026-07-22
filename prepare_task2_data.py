@@ -17,8 +17,8 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 
-DROP_COLUMNS = ["Iron", "Copper", "SAVI"]
-OUTLIER_FEATURES = ["Nitrogen", "Slope", "AOD", "Rain"]
+DROP_COLUMNS = ["Iron", "Copper", "SAVI", "month", "Sand"]
+OUTLIER_FEATURES = ["Nitrogen", "Slope", "AOD", "green_fraction"]
 
 # Same core feature set defined in preprocess2.ipynb.
 CORE_FEATURES = [
@@ -26,15 +26,16 @@ CORE_FEATURES = [
     "Temp",
     "LST",
     "SoilMoisture",
-    "NDVI",
-    "green_fraction",
+    "NDVI_log",
+    "green_fraction_boxcox",
     "Clay",
+    "Silt_log",
     "Nitrogen_log",
     "pH",
     "BulkDensity",
     "Elevation",
     "Slope_log",
-    "AOD",
+    "AOD_log",
     "NO2_log",
     "SO2_log",
     "Month_Sin",
@@ -45,11 +46,11 @@ CORE_FEATURES = [
 
 # Same research-based weights from Task1_Option2_Improved (1).py.
 FERTILITY_WEIGHTS = {
-    "Nitrogen": 0.40,
+    "Nitrogen": 0.25,
     "pH": 0.25,
-    "NDVI": 0.15,
-    "SoilMoisture": 0.10,
-    "Clay": 0.10,
+    "SoilMoisture": 0.20,
+    "Clay": 0.15,
+    "Silt": 0.15,
 }
 
 
@@ -81,68 +82,13 @@ def normalize_ph_optimal(
 def apply_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
     """Apply preprocessing logic from preprocess2.ipynb."""
     df_cleaned = df.copy()
-
-    # Drop redundant features (if present).
-    to_drop = [col for col in DROP_COLUMNS if col in df_cleaned.columns]
-    if to_drop:
-        df_cleaned = df_cleaned.drop(columns=to_drop)
-
-    # Parse date exactly as monthly entries first, fallback to generic parsing.
-    df_cleaned["date"] = pd.to_datetime(df_cleaned["date"], format="%Y-%m", errors="coerce")
+    df_cleaned["date"] = pd.to_datetime(df_cleaned["date"], errors="coerce")
     if df_cleaned["date"].isna().any():
-        df_cleaned["date"] = pd.to_datetime(df_cleaned["date"], errors="coerce")
-    if df_cleaned["date"].isna().any():
-        raise ValueError("Date parsing failed for some rows in 'date' column.")
-    df_cleaned["date"] = df_cleaned["date"].dt.to_period("M").dt.to_timestamp()
+        raise ValueError("Date parsing failed.")
 
-    # Extract spatial coordinates from .geo, same as preprocessing notebook.
-    if ".geo" in df_cleaned.columns:
-        coords = df_cleaned[".geo"].apply(extract_coordinates)
-        df_cleaned["longitude"] = coords.str[0]
-        df_cleaned["latitude"] = coords.str[1]
-
-    if "longitude" not in df_cleaned.columns or "latitude" not in df_cleaned.columns:
-        raise ValueError("Could not derive longitude/latitude from dataset.")
-
-    if df_cleaned[["longitude", "latitude"]].isna().any().any():
-        raise ValueError("Missing longitude/latitude found after .geo coordinate extraction.")
-
-    # Fill NO2 missing values with median (as in preprocess2.ipynb).
-    if "NO2" in df_cleaned.columns and df_cleaned["NO2"].isna().any():
-        df_cleaned["NO2"] = df_cleaned["NO2"].fillna(df_cleaned["NO2"].median())
-
-    # Cap outliers with IQR-based Winsorization.
-    for feature in OUTLIER_FEATURES:
-        if feature not in df_cleaned.columns:
-            continue
-        q1 = df_cleaned[feature].quantile(0.25)
-        q3 = df_cleaned[feature].quantile(0.75)
-        iqr = q3 - q1
-        if iqr <= 0:
-            continue
-        lower = q1 - 1.5 * iqr
-        upper = q3 + 1.5 * iqr
-        df_cleaned[feature] = df_cleaned[feature].clip(lower=lower, upper=upper)
-
-    # Log transforms from preprocess2.ipynb.
-    # Guard against occasional negative sensor artifacts before log1p.
-    df_cleaned["Rain_log"] = np.log1p(df_cleaned["Rain"].clip(lower=0))
-    df_cleaned["NO2_log"] = np.log1p((df_cleaned["NO2"] * 1e6).clip(lower=0))
-    df_cleaned["Slope_log"] = np.log1p(df_cleaned["Slope"].clip(lower=0))
-    df_cleaned["Nitrogen_log"] = np.log1p(df_cleaned["Nitrogen"].clip(lower=0))
-    so2_shifted = df_cleaned["SO2"] - df_cleaned["SO2"].min() + 1e-10
-    df_cleaned["SO2_log"] = np.log1p(so2_shifted * 1e6)
-
-    # Temporal features from actual date.
-    df_cleaned["Month_Actual"] = df_cleaned["date"].dt.month
-    df_cleaned["Year"] = df_cleaned["date"].dt.year
-    df_cleaned["Month_Sin"] = np.sin(2 * np.pi * df_cleaned["Month_Actual"] / 12)
-    df_cleaned["Month_Cos"] = np.cos(2 * np.pi * df_cleaned["Month_Actual"] / 12)
-
-    missing_core = [feature for feature in CORE_FEATURES if feature not in df_cleaned.columns]
+    missing_core = [f for f in CORE_FEATURES if f not in df_cleaned.columns]
     if missing_core:
-        raise ValueError(f"Missing required core features after preprocessing: {missing_core}")
-
+        raise ValueError(f"Missing core features: {missing_core}")
     return df_cleaned
 
 
@@ -151,14 +97,14 @@ def add_fertility_index(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["N_score"] = normalize_minmax(out["Nitrogen"])
     out["pH_score"] = normalize_ph_optimal(out["pH"])
-    out["NDVI_score"] = normalize_minmax(out["NDVI"])
+    out["Silt_score"] = normalize_minmax(out["Silt"])
     out["Moisture_score"] = normalize_minmax(out["SoilMoisture"])
     out["Clay_score"] = normalize_minmax(out["Clay"])
 
     out["FertilityIndex"] = (
         FERTILITY_WEIGHTS["Nitrogen"] * out["N_score"]
         + FERTILITY_WEIGHTS["pH"] * out["pH_score"]
-        + FERTILITY_WEIGHTS["NDVI"] * out["NDVI_score"]
+        + FERTILITY_WEIGHTS["Silt"] * out["Silt_score"]
         + FERTILITY_WEIGHTS["SoilMoisture"] * out["Moisture_score"]
         + FERTILITY_WEIGHTS["Clay"] * out["Clay_score"]
     )
@@ -576,7 +522,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("csv/Bangalore_2019_2024_RAW.csv"),
+        default=Path("csv/df_cleaned.csv"),
         help="Path to Bangalore monthly CSV.",
     )
     parser.add_argument(

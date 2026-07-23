@@ -31,10 +31,12 @@ CORE_FEATURES = [
     "Clay",
     "Silt_log",
     "Nitrogen_log",
+    "Nitrogen",
     "pH",
     "BulkDensity",
     "Elevation",
     "Slope_log",
+    "Slope",
     "AOD_log",
     "NO2_log",
     "SO2_log",
@@ -64,10 +66,8 @@ def extract_coordinates(geo_str: str) -> Tuple[Optional[float], Optional[float]]
         return None, None
 
 
-def normalize_minmax(values: pd.Series) -> np.ndarray:
-    """Min-max normalize a numeric series into [0, 1]."""
-    scaler = MinMaxScaler()
-    return scaler.fit_transform(values.to_numpy().reshape(-1, 1)).ravel()
+def normalize_minmax(values, min_val, max_val):
+    return np.clip((values - min_val) / (max_val - min_val), 0, 1)
 
 
 def normalize_ph_optimal(
@@ -95,11 +95,12 @@ def apply_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
 def add_fertility_index(df: pd.DataFrame) -> pd.DataFrame:
     """Compute composite fertility index using Task 1 Option 2 logic."""
     out = df.copy()
-    out["N_score"] = normalize_minmax(out["Nitrogen"])
+    out["N_score"] = normalize_minmax(out["Nitrogen"], 15, 40)
+    out["pH_score"] = normalize_ph_optimal(out["pH"], tolerance=0.5)
+    out["Silt_score"] = normalize_minmax(out["Silt"], 12, 26)
+    out["Moisture_score"] = normalize_minmax(out["SoilMoisture"], 0.04, 0.40)
+    out["Clay_score"] = normalize_minmax(out["Clay"], 16, 33)
     out["pH_score"] = normalize_ph_optimal(out["pH"])
-    out["Silt_score"] = normalize_minmax(out["Silt"])
-    out["Moisture_score"] = normalize_minmax(out["SoilMoisture"])
-    out["Clay_score"] = normalize_minmax(out["Clay"])
 
     out["FertilityIndex"] = (
         FERTILITY_WEIGHTS["Nitrogen"] * out["N_score"]

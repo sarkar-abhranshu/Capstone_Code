@@ -34,12 +34,25 @@ def set_global_seed(seed: int) -> None:
         pass
 
 
+def willmott_d(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Compute Willmott's Index of Agreement (d)."""
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    mean_obs = np.mean(y_true)
+    numerator = np.sum((y_pred - y_true) ** 2)
+    denominator = np.sum((np.abs(y_pred - mean_obs) + np.abs(y_true - mean_obs)) ** 2)
+    if denominator == 0.0:
+        return 1.0
+    return float(1.0 - numerator / denominator)
+
+
 def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     """Compute regression metrics in a consistent format."""
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
     mae = float(mean_absolute_error(y_true, y_pred))
     r2 = float(r2_score(y_true, y_pred))
-    return {"RMSE": rmse, "MAE": mae, "R2": r2}
+    d = willmott_d(y_true, y_pred)
+    return {"RMSE": rmse, "MAE": mae, "R2": r2, "d": d}
 
 
 def flatten_lag_sequences(X: np.ndarray) -> np.ndarray:
@@ -310,7 +323,7 @@ def tune_bilstm(
         print(
             "Attention BiLSTM candidate "
             f"u1={lstm_units_1}, u2={lstm_units_2}, dropout={dropout}, lr={learning_rate}, "
-            f"batch_size={batch_size_candidate} -> RMSE={val_metrics['RMSE']:.4f}, MAE={val_metrics['MAE']:.4f}, R2={val_metrics['R2']:.4f}"
+            f"batch_size={batch_size_candidate} -> RMSE={val_metrics['RMSE']:.4f}, MAE={val_metrics['MAE']:.4f}, R2={val_metrics['R2']:.4f}, d={val_metrics['d']:.4f}"
         )
         candidate_row = {
             "lstm_units_1": float(lstm_units_1),
@@ -628,10 +641,10 @@ def main() -> None:
     for model_name, metrics in results.items():
         print(f"\n{model_name}")
         print(
-            f"  Validation -> RMSE: {metrics['val']['RMSE']:.4f}, MAE: {metrics['val']['MAE']:.4f}, R2: {metrics['val']['R2']:.4f}"
+            f"  Validation -> RMSE: {metrics['val']['RMSE']:.4f}, MAE: {metrics['val']['MAE']:.4f}, R2: {metrics['val']['R2']:.4f}, d: {metrics['val']['d']:.4f}"
         )
         print(
-            f"  Test       -> RMSE: {metrics['test']['RMSE']:.4f}, MAE: {metrics['test']['MAE']:.4f}, R2: {metrics['test']['R2']:.4f}"
+            f"  Test       -> RMSE: {metrics['test']['RMSE']:.4f}, MAE: {metrics['test']['MAE']:.4f}, R2: {metrics['test']['R2']:.4f}, d: {metrics['test']['d']:.4f}"
         )
 
     best_model = choose_better_model(results)

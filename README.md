@@ -444,7 +444,7 @@ For questions or collaboration opportunities:
 - **GitHub:** [@sarkar-abhranshu](https://github.com/sarkar-abhranshu)
 - **Email:** chink2425@gmail.com
 - **Github:** [Chinthan k](https://github.com/chin123k)
-- **Email:** sdfgh.com
+- **Email:** sdfgh@gmail.com
 - **Github:** [Akhilesh M](https://github.com/asdfgh)
 - **Email:** werty@gmail.com
 - **Github:** [Chethana K R](https://github.com/qwerty)

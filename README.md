@@ -442,6 +442,8 @@ For questions or collaboration opportunities:
 
 - **Email:** abhranshusarkar@outlook.com
 - **GitHub:** [@sarkar-abhranshu](https://github.com/sarkar-abhranshu)
+- **Email:** chink2425@gmail.com
+- **Github:** [Chinthan k](https://github.com/chin123k)
 
 ---
 

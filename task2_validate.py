@@ -10,9 +10,21 @@ from typing import Callable, Dict, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from prepare_task2_data import load_prepared_data, prepare_task2_dataset
+
+
+def willmott_d(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Compute Willmott's Index of Agreement (d)."""
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    mean_obs = np.mean(y_true)
+    numerator = np.sum((y_pred - y_true) ** 2)
+    denominator = np.sum((np.abs(y_pred - mean_obs) + np.abs(y_true - mean_obs)) ** 2)
+    if denominator == 0.0:
+        return 1.0
+    return float(1.0 - numerator / denominator)
 
 
 def get_model_factory(seed: int) -> Tuple[Callable[[], object], str]:
@@ -259,6 +271,8 @@ def main() -> None:
 
     overall_rmse = float(np.sqrt(mean_squared_error(predictions_df["actual"], predictions_df["predicted"])))
     overall_mae = float(mean_absolute_error(predictions_df["actual"], predictions_df["predicted"]))
+    overall_r2 = float(r2_score(predictions_df["actual"], predictions_df["predicted"]))
+    overall_d = willmott_d(predictions_df["actual"].to_numpy(), predictions_df["predicted"].to_numpy())
     error_series = predictions_df["predicted"] - predictions_df["actual"]
 
     rmse_mean = float(monthly_df["RMSE"].mean())
@@ -269,6 +283,8 @@ def main() -> None:
         "model_used": model_name,
         "overall_rmse": overall_rmse,
         "overall_mae": overall_mae,
+        "overall_r2": overall_r2,
+        "overall_d": overall_d,
         "monthly_rmse_mean": rmse_mean,
         "monthly_rmse_std": rmse_std,
         "monthly_rmse_cv": rmse_cv,
@@ -299,6 +315,8 @@ def main() -> None:
     print(f"Model: {model_name}")
     print(f"Overall RMSE: {overall_rmse:.4f}")
     print(f"Overall MAE: {overall_mae:.4f}")
+    print(f"Overall R2: {overall_r2:.4f}")
+    print(f"Overall d: {overall_d:.4f}")
     print(f"Monthly RMSE mean: {rmse_mean:.4f}")
     print(f"Monthly RMSE std: {rmse_std:.4f}")
     print(f"Monthly RMSE CV: {rmse_cv:.4f}")

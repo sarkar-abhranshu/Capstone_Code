@@ -114,7 +114,7 @@ def build_lstm_model(input_shape: Tuple[int, int], learning_rate: float = 1e-3):
     """Build a compact 2-layer LSTM for multivariate monthly sequences."""
     try:
         import tensorflow as tf
-        from tensorflow.keras import layers, regularizers
+        from tensorflow.keras import layers
     except Exception as exc:
         raise ImportError(
             "TensorFlow is not available. Install with: pip install tensorflow"
@@ -123,10 +123,10 @@ def build_lstm_model(input_shape: Tuple[int, int], learning_rate: float = 1e-3):
     model = tf.keras.Sequential(
         [
             layers.Input(shape=input_shape),
-            layers.LSTM(48, return_sequences=True, recurrent_dropout=0.2, kernel_regularizer=regularizers.l2(1e-4)),
-            layers.Dropout(0.3),
-            layers.LSTM(24, kernel_regularizer=regularizers.l2(1e-4)),
-            layers.Dense(16, activation="relu", kernel_regularizer=regularizers.l2(1e-4)),
+            layers.LSTM(64, return_sequences=True),
+            layers.Dropout(0.2),
+            layers.LSTM(32),
+            layers.Dense(16, activation="relu"),
             layers.Dense(1),
         ]
     )
@@ -143,17 +143,30 @@ def build_bilstm_model(input_shape: Tuple[int, int], learning_rate: float = 1e-3
     return build_bilstm_attention_model(input_shape=input_shape, learning_rate=learning_rate)
 
 
+def compute_trend(tensor):
+    """Compute OLS slope per feature over the time dimension."""
+    import tensorflow as tf
+    timesteps = tf.cast(tf.shape(tensor)[1], tf.float32)
+    t = tf.range(timesteps, dtype=tf.float32)
+    t_centered = t - tf.reduce_mean(t)
+    t_centered = tf.reshape(t_centered, (1, -1, 1))
+    x_centered = tensor - tf.reduce_mean(tensor, axis=1, keepdims=True)
+    numerator = tf.reduce_sum(t_centered * x_centered, axis=1)
+    denominator = tf.reduce_sum(t_centered ** 2)
+    return numerator / denominator
+
+
 def build_bilstm_attention_model(
     input_shape: Tuple[int, int],
-    lstm_units_1: int = 48,
-    lstm_units_2: int = 24,
-    dropout: float = 0.25,
+    lstm_units_1: int = 64,
+    lstm_units_2: int = 32,
+    dropout: float = 0.2,
     learning_rate: float = 1e-3,
 ):
-    """Build a BiLSTM with attention."""
+    """Build a BiLSTM with attention + rolling statistics context."""
     try:
         import tensorflow as tf
-        from tensorflow.keras import layers, regularizers
+        from tensorflow.keras import layers
     except Exception as exc:
         raise ImportError(
             "TensorFlow is not available. Install with: pip install tensorflow"
@@ -161,21 +174,32 @@ def build_bilstm_attention_model(
 
     inputs = layers.Input(shape=input_shape)
     x = layers.Bidirectional(
-        layers.LSTM(lstm_units_1, return_sequences=True, recurrent_dropout=0.15, kernel_regularizer=regularizers.l2(1e-4))
+        layers.LSTM(lstm_units_1, return_sequences=True)
     )(inputs)
     x = layers.Dropout(dropout)(x)
     x = layers.Bidirectional(
-        layers.LSTM(lstm_units_2, return_sequences=True, kernel_regularizer=regularizers.l2(1e-4))
+        layers.LSTM(lstm_units_2, return_sequences=True)
     )(x)
 
     query = layers.Lambda(lambda tensor: tensor[:, -1:, :], name="attention_query")(x)
     context = layers.Attention(use_scale=True, name="temporal_attention")([query, x])
     context = layers.Flatten(name="attention_context_flatten")(context)
     query = layers.Flatten(name="attention_query_flatten")(query)
-    x = layers.Concatenate(name="attention_concatenate")([query, context])
+    attn_out = layers.Concatenate(name="attention_concatenate")([query, context])
 
+    mean_feat = layers.Lambda(
+        lambda t: tf.reduce_mean(t, axis=1), name="rolling_mean"
+    )(inputs)
+    std_feat = layers.Lambda(
+        lambda t: tf.math.reduce_std(t, axis=1), name="rolling_std"
+    )(inputs)
+    trend_feat = layers.Lambda(compute_trend, name="rolling_trend")(inputs)
+
+    x = layers.Concatenate(name="context_concatenate")(
+        [attn_out, mean_feat, std_feat, trend_feat]
+    )
     x = layers.Dropout(dropout)(x)
-    x = layers.Dense(16, activation="relu", kernel_regularizer=regularizers.l2(5e-5))(x)
+    x = layers.Dense(16, activation="relu")(x)
     outputs = layers.Dense(1)(x)
 
     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="bilstm_attention")
@@ -207,8 +231,7 @@ def train_lstm(
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss", patience=10, restore_best_weights=True
-        ),
-        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=4, min_lr=1e-6, verbose=1)
+        )
     ]
 
     history = model.fit(
@@ -244,8 +267,7 @@ def train_bilstm(
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss", patience=10, restore_best_weights=True
-        ),
-        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=4, min_lr=1e-6, verbose=1)
+        )
     ]
 
     history = model.fit(
@@ -278,9 +300,9 @@ def tune_bilstm(
         ) from exc
 
     search_space = {
-        "lstm_units_1": [48],
-        "lstm_units_2": [24],
-        "dropout": [0.25],
+        "lstm_units_1": [32],
+        "lstm_units_2": [16],
+        "dropout": [0.1],
         "learning_rate": [1e-3],
         "batch_size": [64],
     }
@@ -305,9 +327,8 @@ def tune_bilstm(
         )
         callbacks = [
             tf.keras.callbacks.EarlyStopping(
-                monitor="val_loss", patience=10, restore_best_weights=True
-            ),
-            tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=4, min_lr=1e-6, verbose=1),
+                monitor="val_loss", patience=5, restore_best_weights=True
+            )
         ]
         history = model.fit(
             X_train,

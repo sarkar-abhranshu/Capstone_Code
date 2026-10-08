@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Urban Fertility Dashboard — Bangalore</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -15,203 +16,352 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #0f0f13;
-  --surface: #1a1a24;
-  --surface2: #24243a;
-  --border: #2a2a44;
-  --text: #e8e8f0;
-  --text2: #9090b0;
-  --accent: #7c3aed;
-  --accent2: #a78bfa;
-  --green: #22c55e;
-  --yellow: #eab308;
+  --bg: #050505;
+  --surface: rgba(20, 20, 30, 0.65);
+  --surface2: rgba(30, 30, 45, 0.85);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.15);
+  --text: #ffffff;
+  --text2: #a0a0b8;
+  --accent: #8b5cf6;
+  --accent2: #c4b5fd;
+  --accent-glow: rgba(139, 92, 246, 0.5);
+  --green: #10b981;
+  --yellow: #f59e0b;
   --red: #ef4444;
-  --radius: 12px;
-  --shadow: 0 8px 32px rgba(0,0,0,0.5);
-  --font: 'Inter', system-ui, -apple-system, sans-serif;
+  --radius: 16px;
+  --shadow: 0 16px 40px rgba(0,0,0,0.6);
+  --font: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
 }
 html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); overflow: hidden; }
+
+/* Loader */
+#loader {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  transition: opacity 0.8s ease, visibility 0.8s;
+}
+#loader.hidden { opacity: 0; visibility: hidden; }
+.spinner {
+  width: 50px; height: 50px;
+  border: 3px solid rgba(139, 92, 246, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Map container */
 #map {
   position: fixed; inset: 0;
   z-index: 0;
 }
-.leaflet-container { background: #0a0a10 !important; }
-.leaflet-control-zoom a { background: var(--surface) !important; color: var(--text) !important; border-color: var(--border) !important; }
-.leaflet-control-attribution { background: var(--surface) !important; color: var(--text2) !important; }
+.leaflet-container { background: #050505 !important; font-family: var(--font) !important; }
+.leaflet-control-zoom a { background: var(--surface2) !important; color: var(--text) !important; border-color: var(--border) !important; backdrop-filter: blur(10px); }
+.leaflet-control-attribution { background: var(--surface) !important; color: var(--text2) !important; backdrop-filter: blur(10px); }
 .leaflet-control-attribution a { color: var(--accent2) !important; }
-.marker-cluster-small { background-color: rgba(124,58,237,0.3) !important; }
-.marker-cluster-small div { background-color: rgba(124,58,237,0.6) !important; color: #fff !important; }
-.marker-cluster-medium { background-color: rgba(168,85,247,0.3) !important; }
-.marker-cluster-medium div { background-color: rgba(168,85,247,0.6) !important; color: #fff !important; }
-.marker-cluster-large { background-color: rgba(192,38,211,0.3) !important; }
-.marker-cluster-large div { background-color: rgba(192,38,211,0.6) !important; color: #fff !important; }
+
+/* Custom leaflet clusters */
+.marker-cluster { background-clip: padding-box; border-radius: 20px; }
+.marker-cluster div { width: 30px; height: 30px; margin-left: 5px; margin-top: 5px; text-align: center; border-radius: 15px; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.marker-cluster-small { background-color: rgba(139,92,246,0.3) !important; box-shadow: 0 0 20px rgba(139,92,246,0.2); }
+.marker-cluster-small div { background-color: rgba(139,92,246,0.8) !important; color: #fff !important; }
+.marker-cluster-medium { background-color: rgba(192,38,211,0.3) !important; box-shadow: 0 0 20px rgba(192,38,211,0.2); }
+.marker-cluster-medium div { background-color: rgba(192,38,211,0.8) !important; color: #fff !important; }
+.marker-cluster-large { background-color: rgba(236,72,153,0.3) !important; box-shadow: 0 0 20px rgba(236,72,153,0.2); }
+.marker-cluster-large div { background-color: rgba(236,72,153,0.8) !important; color: #fff !important; }
 
 /* Header overlay */
 #header {
-  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
   z-index: 1000;
-  background: rgba(26,26,36,0.92);
-  backdrop-filter: blur(16px);
+  background: var(--surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 12px 24px;
-  display: flex; align-items: center; gap: 20px;
+  border-top: 1px solid var(--border-light);
+  border-radius: 100px;
+  padding: 12px 32px;
+  display: flex; align-items: center; gap: 24px;
   box-shadow: var(--shadow);
+  animation: slideDown 0.6s ease-out;
 }
-#header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
-#header h1 span { color: var(--accent2); }
-#header .subtitle { font-size: 12px; color: var(--text2); }
+@keyframes slideDown { from { transform: translate(-50%, -150%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+#header h1 { 
+  font-size: 20px; font-weight: 800; letter-spacing: -0.5px; 
+  background: linear-gradient(to right, #fff, var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+#header .subtitle { font-size: 13px; color: var(--text2); font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
 
 /* Legend */
 #legend {
-  position: fixed; bottom: 32px; right: 20px;
+  position: fixed; bottom: 32px; right: 24px;
   z-index: 1000;
-  background: rgba(26,26,36,0.92);
-  backdrop-filter: blur(12px);
+  background: var(--surface);
+  backdrop-filter: blur(20px);
   border: 1px solid var(--border);
+  border-top: 1px solid var(--border-light);
   border-radius: var(--radius);
-  padding: 14px 18px;
+  padding: 18px 24px;
   box-shadow: var(--shadow);
+  animation: slideUp 0.6s ease-out 0.2s both;
 }
-#legend h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 8px; }
-#legend .item { display: flex; align-items: center; gap: 10px; margin: 5px 0; font-size: 13px; cursor: pointer; padding: 3px 6px; border-radius: 6px; transition: 0.2s; }
-#legend .item:hover { background: var(--surface2); }
-#legend .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.15); flex-shrink: 0; }
-#legend .count { font-size: 11px; color: var(--text2); margin-left: auto; }
+@keyframes slideUp { from { transform: translateY(150%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+#legend h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text2); margin-bottom: 12px; }
+#legend .item { display: flex; align-items: center; gap: 12px; margin: 8px 0; font-size: 14px; font-weight: 500; cursor: pointer; padding: 6px 10px; border-radius: 8px; transition: all 0.2s; }
+#legend .item:hover { background: rgba(255,255,255,0.05); transform: translateX(4px); }
+#legend .dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 10px currentColor; border: 2px solid rgba(255,255,255,0.3); flex-shrink: 0; }
+#legend .count { font-size: 12px; font-weight: 600; color: var(--text2); margin-left: auto; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 20px; }
 
 /* Stats bar */
 #stats {
-  position: fixed; bottom: 32px; left: 20px;
+  position: fixed; bottom: 32px; left: 24px;
   z-index: 1000;
-  display: flex; gap: 10px;
+  display: flex; gap: 16px;
+  animation: slideUp 0.6s ease-out 0.1s both;
 }
 .stat-card {
-  background: rgba(26,26,36,0.92);
-  backdrop-filter: blur(12px);
+  background: var(--surface);
+  backdrop-filter: blur(20px);
   border: 1px solid var(--border);
+  border-top: 1px solid var(--border-light);
   border-radius: var(--radius);
-  padding: 12px 18px;
+  padding: 16px 24px;
   box-shadow: var(--shadow);
   text-align: center;
-  min-width: 90px;
+  min-width: 110px;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-.stat-card .num { font-size: 20px; font-weight: 700; }
-.stat-card .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); margin-top: 2px; }
+.stat-card:hover { transform: translateY(-5px); }
+.stat-card .num { font-size: 26px; font-weight: 800; text-shadow: 0 0 20px rgba(255,255,255,0.1); }
+.stat-card .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-top: 4px; }
+
+/* Animated Markers */
+.pulse-marker {
+  border-radius: 50%;
+  animation: pulse 2.5s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(var(--rgb), 0.7); }
+  70% { box-shadow: 0 0 0 12px rgba(var(--rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--rgb), 0); }
+}
 
 /* Side panel */
 #panel {
-  position: fixed; top: 0; right: -480px; width: 480px; height: 100%;
+  position: fixed; top: 0; right: -520px; width: 520px; height: 100%;
   z-index: 2000;
-  background: rgba(18,18,28,0.97);
-  backdrop-filter: blur(24px);
-  border-left: 1px solid var(--border);
-  box-shadow: -8px 0 40px rgba(0,0,0,0.6);
-  transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  background: rgba(15, 15, 20, 0.85);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border-left: 1px solid var(--border-light);
+  box-shadow: -10px 0 50px rgba(0,0,0,0.8);
+  transition: right 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex; flex-direction: column;
-  overflow: hidden;
+}
+#panel::before {
+  content: "";
+  position: absolute; top: 0; left: 0; right: 0; height: 250px;
+  background: radial-gradient(ellipse at top right, var(--accent-glow), transparent 70%);
+  opacity: 0.4; pointer-events: none; z-index: -1;
 }
 #panel.open { right: 0; }
 #panel-backdrop {
   position: fixed; inset: 0; z-index: 1999;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
   opacity: 0; pointer-events: none;
-  transition: opacity 0.3s;
+  transition: opacity 0.4s;
 }
 #panel-backdrop.show { opacity: 1; pointer-events: auto; }
 
 #panel-header {
-  padding: 24px 28px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 32px 32px 24px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
   display: flex; align-items: flex-start; justify-content: space-between;
   flex-shrink: 0;
 }
-#panel-header .info h2 { font-size: 16px; font-weight: 600; }
-#panel-header .info .coords { font-size: 12px; color: var(--text2); margin-top: 2px; font-family: monospace; }
+#panel-header .info h2 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+#panel-header .info .coords { font-size: 13px; font-weight: 500; color: var(--accent2); margin-top: 8px; font-family: ui-monospace, monospace; background: rgba(196,181,253,0.1); padding: 4px 10px; border-radius: 6px; display: inline-block; border: 1px solid rgba(196,181,253,0.2); }
 #panel-close {
-  width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); cursor: pointer;
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05); color: var(--text); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px; transition: 0.2s; flex-shrink: 0;
+  font-size: 20px; transition: all 0.2s; flex-shrink: 0;
 }
-#panel-close:hover { background: var(--surface2); }
+#panel-close:hover { background: var(--text); color: var(--bg); transform: rotate(90deg); }
 
 #panel-body {
-  flex: 1; overflow-y: auto; padding: 20px 28px 28px;
+  flex: 1; overflow-y: auto; padding: 24px 32px 40px;
 }
-#panel-body::-webkit-scrollbar { width: 4px; }
-#panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+#panel-body::-webkit-scrollbar { width: 6px; }
+#panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 6px; }
 
 .score-row {
-  display: flex; gap: 12px; margin-bottom: 20px;
+  display: flex; gap: 16px; margin-bottom: 28px;
 }
 .score-card {
   flex: 1;
-  background: var(--surface);
+  background: linear-gradient(145deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
   border: 1px solid var(--border);
+  border-top: 1px solid var(--border-light);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 20px;
   text-align: center;
+  position: relative;
+  overflow: hidden;
 }
-.score-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); }
-.score-card .value { font-size: 28px; font-weight: 800; margin: 6px 0 2px; }
+.score-card::after {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+  pointer-events: none;
+}
+.score-card .label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); position: relative; z-index: 1; }
+.score-card .value { font-size: 38px; font-weight: 800; margin: 10px 0; font-variant-numeric: tabular-nums; position: relative; z-index: 1; text-shadow: 0 4px 20px rgba(0,0,0,0.5); }
 .score-card .badge {
+  position: relative; z-index: 1;
   display: inline-block;
-  font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 20px;
-  text-transform: uppercase; letter-spacing: 0.3px;
+  font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px;
+  text-transform: uppercase; letter-spacing: 1px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
-.badge-high { background: rgba(34,197,94,0.15); color: var(--green); }
-.badge-medium { background: rgba(234,179,8,0.15); color: var(--yellow); }
-.badge-low { background: rgba(239,68,68,0.15); color: var(--red); }
+.badge-high { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+.badge-medium { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+.badge-low { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
 
 /* Model selector */
 .model-tabs {
-  display: flex; gap: 6px; margin-bottom: 16px;
-  background: var(--surface); border-radius: 10px; padding: 4px;
+  display: flex; gap: 8px; margin-bottom: 24px;
+  background: rgba(0,0,0,0.3); border-radius: 12px; padding: 6px;
+  border: 1px solid rgba(255,255,255,0.03);
 }
 .model-tab {
-  flex: 1; text-align: center; padding: 8px 6px; border-radius: 8px;
-  font-size: 11px; font-weight: 600; cursor: pointer;
-  transition: 0.2s; border: none; color: var(--text2); background: transparent;
+  flex: 1; text-align: center; padding: 10px 8px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: none; color: var(--text2); background: transparent;
 }
-.model-tab.active { background: var(--accent); color: #fff; box-shadow: 0 2px 12px rgba(124,58,237,0.3); }
-.model-tab:hover:not(.active) { color: var(--text); background: var(--surface2); }
+.model-tab.active { background: var(--accent); color: #fff; box-shadow: 0 4px 15px rgba(139,92,246,0.4); text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+.model-tab:hover:not(.active) { color: var(--text); background: rgba(255,255,255,0.05); }
 
-.chart-container { position: relative; height: 260px; margin-bottom: 8px; }
+.chart-wrapper {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 20px 10px;
+  margin-bottom: 24px;
+}
+.chart-container { position: relative; height: 260px; }
 
-/* Prediction value on chart area */
+/* Prediction summary area */
 .pred-summary {
-  display: flex; gap: 12px; margin-top: 0;
+  display: flex; gap: 16px;
 }
 .pred-stat {
   flex: 1;
-  background: var(--surface);
+  background: rgba(255,255,255,0.03);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
+  border-radius: 12px;
+  padding: 16px;
   text-align: center;
+  transition: transform 0.2s;
 }
-.pred-stat .label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.3px; }
-.pred-stat .value { font-size: 16px; font-weight: 700; margin-top: 2px; }
-.pred-stat .change { font-size: 12px; font-weight: 600; margin-top: 1px; }
+.pred-stat:hover { transform: translateY(-3px); background: rgba(255,255,255,0.05); }
+.pred-stat .label { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+.pred-stat .value { font-size: 18px; font-weight: 800; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.pred-stat .change { font-size: 13px; font-weight: 700; margin-top: 6px; display: inline-flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 12px; }
 .change-up { color: var(--green); }
 .change-down { color: var(--red); }
 .change-flat { color: var(--yellow); }
 
 /* Mobile */
 @media (max-width: 640px) {
-  #header { top: 10px; padding: 10px 16px; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 20px); }
-  #header h1 { font-size: 15px; }
-  #panel { width: 100%; right: -100%; }
-  #legend { bottom: 16px; right: 10px; padding: 10px 14px; }
-  #stats { bottom: 16px; left: 10px; flex-wrap: wrap; gap: 6px; }
-  .stat-card { min-width: 60px; padding: 8px 12px; }
-  .stat-card .num { font-size: 16px; }
-  #panel-body { padding: 16px; }
-  #panel-header { padding: 16px; }
+  #header { top: 16px; padding: 12px 20px; flex-wrap: wrap; gap: 8px; width: calc(100% - 32px); max-width: 400px; justify-content: center; }
+  #header h1 { font-size: 18px; }
+  #panel { width: 100%; right: -100%; border-left: none; }
+  #legend { bottom: 110px; right: 16px; padding: 12px 16px; }
+  #legend h3 { font-size: 10px; margin-bottom: 8px; }
+  #legend .item { font-size: 12px; padding: 4px 8px; margin: 4px 0; }
+  #stats { bottom: 16px; left: 16px; right: 16px; flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .stat-card { min-width: 90px; padding: 12px 16px; flex: 1; }
+  .stat-card .num { font-size: 20px; }
+  #panel-body { padding: 20px; }
+  #panel-header { padding: 24px 20px 20px; }
+  .score-row { gap: 10px; }
+  .score-card { padding: 16px 12px; }
+  .score-card .value { font-size: 28px; }
+  .pred-summary { gap: 10px; }
+  .pred-stat { padding: 12px; }
 }
+/* Info Modal */
+#info-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+#info-modal.show { opacity: 1; pointer-events: auto; }
+#info-modal .modal-content { max-width: 500px; width: 90%; padding: 40px; border-radius: 24px; position: relative; transform: translateY(20px); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+#info-modal.show .modal-content { transform: translateY(0); }
+#info-modal .icon-box { width: 40px; height: 40px; border-radius: 12px; background: var(--surface2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid var(--border); }
+#info-btn:hover { background: var(--surface2) !important; transform: translateY(-2px); }
 </style>
 </head>
 <body>
+
+<div id="loader">
+  <div class="spinner"></div>
+  <div style="margin-top: 24px; font-weight: 700; color: var(--accent2); letter-spacing: 3px; text-transform: uppercase; font-size: 12px; text-shadow: 0 0 10px var(--accent-glow);">Initializing Engine</div>
+</div>
+
+<!-- Info Button -->
+<div id="info-btn" class="glass-panel" style="position: absolute; top: 120px; left: 24px; z-index: 1000; padding: 12px 20px; cursor: pointer; border-radius: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;">
+  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+  Guide
+</div>
+
+<!-- Info Modal -->
+<div id="info-modal">
+  <div class="glass-panel modal-content">
+    <button id="close-info" style="position: absolute; top: 20px; right: 20px; background: none; border: none; color: var(--text2); cursor: pointer; font-size: 28px; line-height: 1; padding: 5px; transition: color 0.2s;">&times;</button>
+    <h2 style="margin: 0 0 10px 0; font-size: 24px; color: var(--text);">Welcome to FertilityScope</h2>
+    <p style="color: var(--text2); line-height: 1.6; margin-bottom: 24px;">This interactive map tracks and predicts urban soil fertility across Bangalore using AI.</p>
+    
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div style="display: flex; align-items: flex-start; gap: 16px;">
+        <div class="icon-box">
+          <div style="width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent);"></div>
+        </div>
+        <div>
+          <strong style="color: var(--text); display: block; margin-bottom: 4px;">Map Markers (Sites)</strong>
+          <div style="color: var(--text2); font-size: 14px; line-height: 1.5;">Each glowing point represents a specific geographic site. Clusters with numbers show multiple sites grouped together; click them to zoom in.</div>
+        </div>
+      </div>
+      
+      <div style="display: flex; align-items: flex-start; gap: 16px;">
+        <div class="icon-box">
+          <svg width="20" height="20" fill="none" stroke="var(--accent2)" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+        </div>
+        <div>
+          <strong style="color: var(--text); display: block; margin-bottom: 4px;">Fertility Forecasts</strong>
+          <div style="color: var(--text2); font-size: 14px; line-height: 1.5;">Click any marker to open its analytics panel. You'll see historical fertility trends and a 6-month future forecast powered by Deep Learning models.</div>
+        </div>
+      </div>
+      
+      <div style="display: flex; align-items: flex-start; gap: 16px;">
+        <div class="icon-box">
+          <svg width="20" height="20" fill="none" stroke="#eab308" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+        </div>
+        <div>
+          <strong style="color: var(--text); display: block; margin-bottom: 4px;">Interactive Filters</strong>
+          <div style="color: var(--text2); font-size: 14px; line-height: 1.5;">Use the legend in the bottom right to filter sites by their current fertility status (Optimal, Moderate, or Low).</div>
+        </div>
+      </div>
+    </div>
+    
+    <button id="got-it-btn" style="width: 100%; margin-top: 32px; padding: 14px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-weight: 600; cursor: pointer; transition: all 0.2s ease;">Let's explore</button>
+  </div>
+</div>
 
 <div id="map"></div>
 
@@ -222,9 +372,9 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 
 <div id="legend">
   <h3>Fertility</h3>
-  <div class="item" data-class="High"><span class="dot" style="background:var(--green)"></span> Optimal <span class="count" id="count-high"></span></div>
-  <div class="item" data-class="Medium"><span class="dot" style="background:var(--yellow)"></span> Moderate <span class="count" id="count-med"></span></div>
-  <div class="item" data-class="Low"><span class="dot" style="background:var(--red)"></span> Low <span class="count" id="count-low"></span></div>
+  <div class="item" data-class="High"><span class="dot" style="color:var(--green); background:var(--green);"></span> Optimal <span class="count" id="count-high"></span></div>
+  <div class="item" data-class="Medium"><span class="dot" style="color:var(--yellow); background:var(--yellow);"></span> Moderate <span class="count" id="count-med"></span></div>
+  <div class="item" data-class="Low"><span class="dot" style="color:var(--red); background:var(--red);"></span> Low <span class="count" id="count-low"></span></div>
 </div>
 
 <div id="stats">
@@ -241,17 +391,21 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
       <h2 id="panel-title">Site Details</h2>
       <div class="coords" id="panel-coords"></div>
     </div>
-    <button id="panel-close">&times;</button>
+    <button id="panel-close" title="Close Panel">&times;</button>
   </div>
   <div id="panel-body">
+    <div style="font-size: 12px; color: var(--text2); text-align: center; margin-bottom: 20px; background: rgba(139,92,246,0.1); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(139,92,246,0.2); font-weight: 500;">
+      💡 <strong>Fertility Index Scale:</strong> 0.0 (Barren/Degraded) to 1.0 (Highly Fertile)
+    </div>
+
     <div class="score-row">
       <div class="score-card">
-        <div class="label">Current</div>
+        <div class="label">Current Index</div>
         <div class="value" id="panel-current-val">—</div>
         <div><span class="badge" id="panel-current-badge"></span></div>
       </div>
       <div class="score-card">
-        <div class="label">Predicted (6mo)</div>
+        <div class="label" id="forecast-label">Forecasted Index</div>
         <div class="value" id="panel-predicted-val">—</div>
         <div><span class="badge" id="panel-predicted-badge"></span></div>
       </div>
@@ -260,9 +414,13 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
     <div class="model-tabs" id="model-tabs">
       <!-- Tabs will be injected here dynamically -->
     </div>
+    
+    <div id="model-desc" style="font-size: 12px; color: var(--text2); text-align: center; margin-bottom: 20px; background: rgba(255,255,255,0.02); padding: 10px; border-radius: 8px; border: 1px solid var(--border); line-height: 1.5;"></div>
 
-    <div class="chart-container">
-      <canvas id="trend-chart"></canvas>
+    <div class="chart-wrapper">
+      <div class="chart-container">
+        <canvas id="trend-chart"></canvas>
+      </div>
     </div>
 
     <div class="pred-summary">
@@ -283,21 +441,23 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 </div>
 
 <script>
+// Styling Constants
 const CLASS_ORDER = {"Low": 0, "Medium": 1, "High": 2};
-const CLASS_COLORS = {"Low": "#ef4444", "Medium": "#eab308", "High": "#22c55e"};
+const CLASS_COLORS = {"Low": "#ef4444", "Medium": "#f59e0b", "High": "#10b981"};
+const CLASS_RGB = {"Low": "239, 68, 68", "Medium": "245, 158, 11", "High": "16, 185, 129"};
 let MODELS = [];
 
+// Initialize Map
 const map = L.map("map", {
   center: [12.97, 77.59],
   zoom: 11,
   zoomControl: true,
-  attributionControl: true,
+  attributionControl: false,
 });
 
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-  subdomains: "abcd",
-  maxZoom: 19,
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+  attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+  maxZoom: 16,
   minZoom: 4,
 }).addTo(map);
 
@@ -325,10 +485,11 @@ function getClassColor(className) {
   return CLASS_COLORS[className] || "#666";
 }
 
-function createIcon(className, size = 12) {
+function createIcon(className, size = 14) {
   const color = getClassColor(className);
+  const rgb = CLASS_RGB[className] || "100,100,100";
   return L.divIcon({
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2px solid rgba(255,255,255,0.3);box-shadow:0 0 12px ${color}66;"></div>`,
+    html: `<div class="pulse-marker" style="--rgb:${rgb}; width:${size}px; height:${size}px; background:${color}; border-radius:50%; border:2px solid #fff; box-shadow:0 0 15px ${color};"></div>`,
     className: "",
     iconSize: L.point(size + 4, size + 4),
     iconAnchor: [size / 2 + 2, size / 2 + 2],
@@ -341,9 +502,9 @@ function getFertilityClass(score) {
   return "Low";
 }
 
-function scoreColor(score) {
-  return score >= 0.70 ? "#22c55e" : score >= 0.50 ? "#eab308" : "#ef4444";
-}
+// Set chart.js defaults
+Chart.defaults.font.family = "'Plus Jakarta Sans', system-ui, sans-serif";
+Chart.defaults.color = "#a0a0b8";
 
 // Load data
 fetch("data.json")
@@ -396,10 +557,26 @@ fetch("data.json")
 
     // Fit bounds
     const bounds = sites.map(s => [s.lat, s.lng]);
-    if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+    if (bounds.length) map.fitBounds(bounds, { padding: [60, 60] });
 
-    // Open first site as default
-    if (sites.length) openPanel(sites[0].id);
+    // Remove Loader & Show Info Modal
+    setTimeout(() => {
+      document.getElementById('loader').classList.add('hidden');
+      // For now, always show the modal on load so you can see it!
+      document.getElementById('info-modal').classList.add('show');
+    }, 500);
+
+    // Info Modal Logic
+    const infoModal = document.getElementById('info-modal');
+    document.getElementById('info-btn').addEventListener('click', () => infoModal.classList.add('show'));
+    document.getElementById('close-info').addEventListener('click', () => infoModal.classList.remove('show'));
+    document.getElementById('got-it-btn').addEventListener('click', () => infoModal.classList.remove('show'));
+    
+    // Hover effect for got-it btn
+    document.getElementById('got-it-btn').addEventListener('mouseover', function() { this.style.background = 'var(--border)'; });
+    document.getElementById('got-it-btn').addEventListener('mouseout', function() { this.style.background = 'var(--surface2)'; });
+    document.getElementById('close-info').addEventListener('mouseover', function() { this.style.color = 'var(--text)'; });
+    document.getElementById('close-info').addEventListener('mouseout', function() { this.style.color = 'var(--text2)'; });
   });
 
 // Legend click to filter
@@ -408,7 +585,8 @@ document.querySelectorAll("#legend .item").forEach(el => {
     const cls = el.dataset.class;
     const checked = !el.classList.contains("dimmed");
     el.classList.toggle("dimmed");
-    el.style.opacity = checked ? "0.4" : "1";
+    el.style.opacity = checked ? "0.3" : "1";
+    el.style.transform = checked ? "scale(0.95)" : "scale(1)";
     toggleClass(cls, !checked);
   });
 });
@@ -424,7 +602,7 @@ function toggleClass(className, show) {
   });
 }
 
-// Side panel
+// Side panel logic
 const panel = document.getElementById("panel");
 const backdrop = document.getElementById("panel-backdrop");
 const panelClose = document.getElementById("panel-close");
@@ -474,16 +652,26 @@ function updatePrediction(site, modelName) {
   document.getElementById("ps-current").textContent = currentF.toFixed(3);
   document.getElementById("ps-predicted").textContent = lastFc.toFixed(3);
   const trendEl = document.getElementById("ps-trend");
+  
   if (Math.abs(diff) < 0.005) {
-    trendEl.textContent = "Stable";
-    trendEl.className = "value change-flat";
+    trendEl.innerHTML = `Stable <span style="margin-left:4px">→</span>`;
+    trendEl.className = "change change-flat";
   } else if (diff > 0) {
-    trendEl.textContent = `+${diff.toFixed(3)}`;
-    trendEl.className = "value change-up";
+    trendEl.innerHTML = `+${diff.toFixed(3)} <span style="margin-left:4px">↗</span>`;
+    trendEl.className = "change change-up";
   } else {
-    trendEl.textContent = `${diff.toFixed(3)}`;
-    trendEl.className = "value change-down";
+    trendEl.innerHTML = `${diff.toFixed(3)} <span style="margin-left:4px">↘</span>`;
+    trendEl.className = "change change-down";
   }
+
+  // Dynamic labels based on model
+  try {
+    const parts = modelName.split('-');
+    const l = parts[0].replace('L', '');
+    const h = parts[1].replace('H', '');
+    document.getElementById("forecast-label").textContent = h + "-MONTH FORECAST";
+    document.getElementById("model-desc").innerHTML = `<strong>${modelName} Model:</strong> Uses past ${l} months of historical data to predict the next ${h} months of fertility index.`;
+  } catch (e) {}
 }
 
 function renderChart(site, modelName) {
@@ -506,12 +694,14 @@ function renderChart(site, modelName) {
   const allLabels = [...histDates, ...fcDates];
   const allValues = [...histValues, ...Array(fcDates.length).fill(null)];
 
-  // Also draw historical continuation
-  const lastHistVal = histValues.length > 0 ? histValues[histValues.length - 1] : null;
+  // Create gradient fills
+  const histGradient = ctx.createLinearGradient(0, 0, 0, 260);
+  histGradient.addColorStop(0, "rgba(139, 92, 246, 0.4)");
+  histGradient.addColorStop(1, "rgba(139, 92, 246, 0.0)");
 
-  // Build a connecting line: last 3 hist + all forecast
-  const connectValues = [...histValues.slice(-3), ...fcValues];
-  const connectLabels = [...histDates.slice(-3), ...fcDates];
+  const fcGradient = ctx.createLinearGradient(0, 0, 0, 260);
+  fcGradient.addColorStop(0, "rgba(16, 185, 129, 0.3)");
+  fcGradient.addColorStop(1, "rgba(16, 185, 129, 0.0)");
 
   chart = new Chart(ctx, {
     type: "line",
@@ -521,23 +711,23 @@ function renderChart(site, modelName) {
         {
           label: "Historical",
           data: allValues.map((v, i) => i < histDates.length ? v : null),
-          borderColor: "#a78bfa",
-          backgroundColor: "rgba(167,139,250,0.1)",
-          borderWidth: 2.5,
+          borderColor: "#c4b5fd",
+          backgroundColor: histGradient,
+          borderWidth: 3,
           pointRadius: (ctx) => {
             const idx = ctx.dataIndex;
-            if (idx === histDates.length - 1) return 5;
-            return 2.5;
+            if (idx === histDates.length - 1) return 6;
+            return 3;
           },
           pointBackgroundColor: (ctx) => {
             const idx = ctx.dataIndex;
             if (idx >= 0 && idx < histColors.length) return histColors[idx];
-            return "#a78bfa";
+            return "#c4b5fd";
           },
           pointBorderColor: "#fff",
-          pointBorderWidth: 1,
+          pointBorderWidth: 1.5,
           fill: true,
-          tension: 0.2,
+          tension: 0.3,
           spanGaps: false,
         },
         {
@@ -547,20 +737,20 @@ function renderChart(site, modelName) {
             histValues[histValues.length - 1] || null,
             ...fcValues,
           ],
-          borderColor: "#22c55e",
-          backgroundColor: "rgba(34,197,94,0.08)",
-          borderWidth: 2.5,
-          borderDash: [6, 4],
+          borderColor: "#10b981",
+          backgroundColor: fcGradient,
+          borderWidth: 3,
+          borderDash: [8, 6],
           pointRadius: (ctx) => {
             const idx = ctx.dataIndex;
-            if (idx >= histDates.length - 1) return 3;
+            if (idx >= histDates.length - 1) return 4;
             return 0;
           },
-          pointBackgroundColor: "#22c55e",
+          pointBackgroundColor: "#10b981",
           pointBorderColor: "#fff",
-          pointBorderWidth: 1,
+          pointBorderWidth: 1.5,
           fill: true,
-          tension: 0.2,
+          tension: 0.3,
           spanGaps: true,
         },
       ],
@@ -568,23 +758,31 @@ function renderChart(site, modelName) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
       plugins: {
         legend: {
           labels: {
-            color: "#9090b0",
-            font: { family: "'Inter', sans-serif", size: 11 },
-            boxWidth: 14,
-            padding: 12,
+            color: "#a0a0b8",
+            font: { family: "'Plus Jakarta Sans', sans-serif", size: 12, weight: 600 },
+            boxWidth: 16,
+            padding: 16,
+            usePointStyle: true,
           },
         },
         tooltip: {
-          backgroundColor: "rgba(26,26,36,0.95)",
-          titleColor: "#e8e8f0",
+          backgroundColor: "rgba(20,20,30,0.9)",
+          titleColor: "#ffffff",
           bodyColor: "#e8e8f0",
-          borderColor: "#2a2a44",
+          borderColor: "rgba(255,255,255,0.1)",
           borderWidth: 1,
-          padding: 10,
-          cornerRadius: 8,
+          padding: 12,
+          cornerRadius: 12,
+          titleFont: { family: "'Plus Jakarta Sans', sans-serif", size: 13, weight: 700 },
+          bodyFont: { family: "'Plus Jakarta Sans', sans-serif", size: 12, weight: 600 },
+          boxPadding: 6,
           callbacks: {
             label: (ctx) => {
               let label = ctx.dataset.label || "";
@@ -601,14 +799,14 @@ function renderChart(site, modelName) {
       },
       scales: {
         x: {
-          ticks: { color: "#606080", font: { size: 10 }, maxRotation: 45 },
-          grid: { color: "rgba(42,42,68,0.4)" },
+          ticks: { color: "#6b7280", font: { size: 11, weight: 600 }, maxRotation: 45 },
+          grid: { color: "rgba(255,255,255,0.03)", drawBorder: false },
         },
         y: {
           min: 0.2,
           max: 0.9,
-          ticks: { color: "#606080", font: { size: 10 } },
-          grid: { color: "rgba(42,42,68,0.4)" },
+          ticks: { color: "#6b7280", font: { size: 11, weight: 600 }, padding: 8 },
+          grid: { color: "rgba(255,255,255,0.03)", drawBorder: false },
         },
       },
     },
@@ -617,9 +815,7 @@ function renderChart(site, modelName) {
   updatePrediction(site, modelName);
 }
 
-// Model tabs event listeners are added dynamically during data load
-
-// Panel close
+// Panel close events
 panelClose.addEventListener("click", closePanel);
 backdrop.addEventListener("click", closePanel);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });

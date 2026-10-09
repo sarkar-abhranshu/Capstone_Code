@@ -373,6 +373,7 @@ def main() -> None:
     test_mask    = payload["test_mask"].astype(bool)
     target_dates = pd.to_datetime(payload["target_dates"].astype(str))
     site_ids     = payload["site_ids"].astype(str)
+    lookback_months = int(payload["lookback_months"])
 
     for split, mask in [("train", train_mask), ("val", val_mask), ("test", test_mask)]:
         if mask.sum() == 0:
@@ -456,7 +457,7 @@ def main() -> None:
 
     # ---- Summary -----------------------------------------------------------
     print("\n" + "=" * 80)
-    print("TASK 2 MODEL COMPARISON  [Horizon = 9 months | Lookback = 18 months]")
+    print(f"TASK 2 MODEL COMPARISON  [Horizon = {HORIZON} months | Lookback = {lookback_months} months]")
     print("=" * 80)
 
     if not results:
@@ -477,7 +478,7 @@ def main() -> None:
     args.metrics_output.write_text(
         json.dumps({
             "horizon_months": HORIZON,
-            "lookback_months": DEFAULT_LOOKBACK,
+            "lookback_months": lookback_months,
             "best_model": best_model,
             "results": results,
             "config": {
